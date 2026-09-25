@@ -144,6 +144,11 @@ st.markdown("""
         border-radius: 8px;
         padding: 15px;
         text-align: center;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.05);
     }
     .metric-val {
         font-size: 1.8rem;
@@ -155,6 +160,58 @@ st.markdown("""
         font-size: 0.85rem;
         color: #64748b;
         text-transform: uppercase;
+        font-weight: 600;
+    }
+
+    /* Specialized Spoilage Cards */
+    .spoilage-hero-card {
+        background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+        border: 1.5px solid #86efac;
+        border-radius: 12px;
+        padding: 20px 16px;
+        text-align: center;
+        box-shadow: 0 4px 14px rgba(16, 185, 129, 0.12);
+        transition: transform 0.2s ease;
+    }
+    .spoilage-hero-card:hover {
+        transform: translateY(-2px);
+    }
+    .spoilage-standard-card {
+        background: #ffffff;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 20px 16px;
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        transition: transform 0.2s ease;
+    }
+    .spoilage-standard-card:hover {
+        transform: translateY(-2px);
+    }
+    .spoilage-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin-top: 6px;
+    }
+    .badge-green {
+        background-color: #d1fae5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+    }
+    .badge-gray {
+        background-color: #f1f5f9;
+        color: #475569;
+        border: 1px solid #cbd5e1;
+    }
+    .badge-amber {
+        background-color: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -267,7 +324,7 @@ temp_dataset_path = os.path.join(tempfile.gettempdir(), "uploaded_dataset.xlsx")
 df_data.to_excel(temp_dataset_path, index=False)
 
 # ----------------- TABS PRINCIPAIS -----------------
-tab_train, tab_test = st.tabs([T("🏋️ Treinar Modelo", "🏋️ Train Model"), T("🧪 Testar & Fine-Tuning", "🧪 Test & Fine-Tuning")])
+tab_train, tab_test = st.tabs([T("🏋️ Treinar Modelo", "🏋️ Train Model"), T("🧪 Simulação & Inferência", "🧪 Simulation & Inference")])
 
 # =====================================================================
 # TAB 1: TREINO DO MODELO
@@ -821,6 +878,7 @@ with tab_test:
                 # Guardar resultados no session state
                 st.session_state.test_completed = True
                 st.session_state.test_results = sim_step
+                st.session_state.test_plot_data = plot_data
                 
                 # Plot final
                 fig_final = go.Figure()
@@ -896,16 +954,43 @@ with tab_test:
 
     if st.session_state.test_completed and st.session_state.test_results is not None:
         res = st.session_state.test_results
+        plot_saved = st.session_state.get("test_plot_data", {})
         
+        # --- CÁLCULO DAS MÉTRICAS DE DESPERDÍCIO / SPOILAGE ---
+        spoilage_ppo = float(res.get("spoilage_total", 0.0))
+        spoilage_mm = float(res.get("spoilage_minmax_total", 0.0))
+        spoilage_oracle = float(res.get("spoilage_oracle_total", 0.0))
+        
+        orders_ppo = float(res.get("total_orders_agent", 0.0))
+        orders_mm = float(res.get("total_orders_minmax", 0.0))
+        orders_oracle = float(res.get("total_orders_oracle", 0.0))
+        
+        # Fallbacks caso venha de dados em buffer
+        if orders_ppo == 0.0 and "Orders" in plot_saved and len(plot_saved["Orders"]) > 0:
+            orders_ppo = float(sum(plot_saved["Orders"]))
+        if orders_mm == 0.0 and "MinMax Orders" in plot_saved and len(plot_saved["MinMax Orders"]) > 0:
+            orders_mm = float(sum(plot_saved["MinMax Orders"]))
+        if spoilage_mm == 0.0 and "MinMax Spoilage" in plot_saved and len(plot_saved["MinMax Spoilage"]) > 0:
+            spoilage_mm = float(sum(plot_saved["MinMax Spoilage"]))
+            
+        pct_spoilage_ppo = (spoilage_ppo / max(1.0, orders_ppo)) * 100.0 if orders_ppo > 0 else 0.0
+        pct_spoilage_mm = (spoilage_mm / max(1.0, orders_mm)) * 100.0 if orders_mm > 0 else 0.0
+        
+        spoilage_avoided = spoilage_mm - spoilage_ppo
+        if spoilage_mm > 0:
+            pct_spoilage_avoided = ((spoilage_mm - spoilage_ppo) / spoilage_mm) * 100.0
+        else:
+            pct_spoilage_avoided = 0.0 if spoilage_ppo == 0 else -100.0
+
         st.markdown("---")
-        st.markdown(f"### 📊 {T('Scorecard de Resultados', 'Results Scorecard')}")
+        st.markdown(f"### 📊 {T('Scorecard de Resultados Globais', 'Global Results Scorecard')}")
         
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.markdown(
                 f'<div class="metric-card">'
-                f'<div class="metric-label">{T("Lucro Agente", "Agent Profit")}</div>'
-                f'<div class="metric-val">{res["cum_profit_agent"]:,.2f}€</div>'
+                f'<div class="metric-label">{T("Lucro Agente PPO", "PPO Agent Profit")}</div>'
+                f'<div class="metric-val" style="color: #10b981;">{res["cum_profit_agent"]:,.2f}€</div>'
                 f'</div>', unsafe_allow_html=True
             )
         with c2:
@@ -918,32 +1003,167 @@ with tab_test:
         with c3:
             st.markdown(
                 f'<div class="metric-card">'
-                f'<div class="metric-label">{T("Apodrecimento", "Spoilage")}</div>'
-                f'<div class="metric-val" style="color: #ff4757;">{res["spoilage_total"]:.0f} un</div>'
+                f'<div class="metric-label">{T("Vendas Perdidas (Agente)", "Lost Sales (Agent)")}</div>'
+                f'<div class="metric-val" style="color: #ffb300;">{res["lost_sales_total"]:.0f} un</div>'
                 f'</div>', unsafe_allow_html=True
             )
         with c4:
             st.markdown(
                 f'<div class="metric-card">'
-                f'<div class="metric-label">{T("Vendas Perdidas", "Lost Sales")}</div>'
-                f'<div class="metric-val" style="color: #ffb300;">{res["lost_sales_total"]:.0f} un</div>'
+                f'<div class="metric-label">{T("Dias Stock Zero (Agente)", "Stockout Days (Agent)")}</div>'
+                f'<div class="metric-val" style="color: #ef4444;">{res["stockout_days"]} {T("dias", "days")}</div>'
                 f'</div>', unsafe_allow_html=True
             )
-        with c5:
+
+        # =====================================================================
+        # SECÇÃO DE DESTAQUE: ANÁLISE COMPARATIVA DE SPOILAGE (PERECIBILIDADE)
+        # =====================================================================
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### 🍃 {T('Eficiência de Perecibilidade & Análise de Spoilage', 'Perishability Efficiency & Spoilage Analysis')}")
+        st.markdown(T(
+            "Avaliação direta da capacidade do Agente RL em gerir produtos perecíveis, reduzindo quebras de validade em comparação com a política de inventário Min-Max.",
+            "Direct assessment of the RL Agent's ability to manage perishable items, reducing expiration waste compared to the Min-Max inventory policy."
+        ))
+
+        col_sp1, col_sp2, col_sp3 = st.columns(3)
+        with col_sp1:
             st.markdown(
-                f'<div class="metric-card">'
-                f'<div class="metric-label">{T("Dias Stock Zero", "Stockout Days")}</div>'
-                f'<div class="metric-val" style="color: #ff4757;">{res["stockout_days"]} {T("dias", "days")}</div>'
+                f'<div class="spoilage-standard-card">'
+                f'<div class="spoilage-label">{T("Taxa Spoilage Min-Max", "Min-Max Spoilage Rate")}</div>'
+                f'<div class="spoilage-val-minmax">{pct_spoilage_mm:.2f}%</div>'
+                f'<div class="spoilage-sub"><b>{spoilage_mm:,.0f} un</b> {T("apodrecidas de", "spoiled out of")} {orders_mm:,.0f} un</div>'
+                f'<div class="spoilage-badge badge-gray">⚙️ Baseline Min-Max</div>'
                 f'</div>', unsafe_allow_html=True
             )
+
+        with col_sp2:
+            st.markdown(
+                f'<div class="spoilage-standard-card" style="border-color: #a7f3d0; background: #fafffc;">'
+                f'<div class="spoilage-label" style="color: #065f46;">{T("Taxa Spoilage RL Agent", "RL Agent Spoilage Rate")}</div>'
+                f'<div class="spoilage-val-ppo">{pct_spoilage_ppo:.2f}%</div>'
+                f'<div class="spoilage-sub"><b>{spoilage_ppo:,.0f} un</b> {T("apodrecidas de", "spoiled out of")} {orders_ppo:,.0f} un</div>'
+                f'<div class="spoilage-badge badge-green">🤖 RL Agent (PPO)</div>'
+                f'</div>', unsafe_allow_html=True
+            )
+
+        with col_sp3:
+            if spoilage_avoided >= 0:
+                st.markdown(
+                    f'<div class="spoilage-hero-card">'
+                    f'<div class="spoilage-label" style="color: #047857;">{T("Desperdício Evitado pelo PPO", "Spoilage Avoided by PPO")}</div>'
+                    f'<div class="spoilage-val-saved">-{pct_spoilage_avoided:.1f}%</div>'
+                    f'<div class="spoilage-sub"><b style="color: #065f46;">{spoilage_avoided:,.0f} un</b> {T("de fruta poupadas", "units of fruit saved")}</div>'
+                    f'<div class="spoilage-badge badge-green">🏆 {T("Menos Desperdício", "Less Waste")}</div>'
+                    f'</div>', unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f'<div class="spoilage-standard-card" style="border-color: #fca5a5; background: #fffbfb;">'
+                    f'<div class="spoilage-label" style="color: #991b1b;">{T("Diferença de Spoilage", "Spoilage Difference")}</div>'
+                    f'<div class="spoilage-val-minmax" style="color: #dc2626;">+{abs(pct_spoilage_avoided):.1f}%</div>'
+                    f'<div class="spoilage-sub"><b>+{abs(spoilage_avoided):,.0f} un</b> {T("face ao Min-Max", "vs Min-Max")}</div>'
+                    f'<div class="spoilage-badge badge-amber">⚠️ +{abs(spoilage_avoided):,.0f} un</div>'
+                    f'</div>', unsafe_allow_html=True
+                )
+
+        # Resumo explicativo em destaque
+        if spoilage_avoided > 0:
+            st.success(T(
+                f"🌿 **Sustentabilidade & Eficiência de Stock**: O nosso Agente PPO evitou **{pct_spoilage_avoided:.1f}%** do desperdício de fruta que ocorreria com o Min-Max tradicional, salvando **{spoilage_avoided:,.0f} unidades** de stock de apodrecer e reduzindo a taxa de quebra de **{pct_spoilage_mm:.2f}%** para **{pct_spoilage_ppo:.2f}%**.",
+                f"🌿 **Sustainability & Stock Efficiency**: Our PPO Agent prevented **{pct_spoilage_avoided:.1f}%** of the fruit waste that would have occurred under traditional Min-Max, saving **{spoilage_avoided:,.0f} units** of stock from spoilage and cutting the spoilage rate from **{pct_spoilage_mm:.2f}%** down to **{pct_spoilage_ppo:.2f}%**."
+            ))
+        elif spoilage_avoided == 0:
+            st.info(T(
+                "🌿 Ambas as estratégias registaram zero quebras de apodrecimento no período testado.",
+                "🌿 Both strategies registered zero spoilage events during the test period."
+            ))
+        else:
+            st.warning(T(
+                f"⚠️ O Agente PPO registou **{abs(spoilage_avoided):,.0f} unidades** a mais de desperdício face ao Min-Max (+{abs(pct_spoilage_avoided):.1f}%).",
+                f"⚠️ The PPO Agent recorded **{abs(spoilage_avoided):,.0f} units** more spoilage than Min-Max (+{abs(pct_spoilage_avoided):.1f}%)."
+            ))
+
+        # --- GRÁFICOS COMPARATIVOS DE SPOILAGE ---
+        col_sp_chart1, col_sp_chart2 = st.columns([7, 5])
+        
+        # Gráfico 1: Evolução do Spoilage Acumulado ao Longo do Tempo
+        with col_sp_chart1:
+            dias_series = res.get("log_dias", plot_saved.get("Dia", list(range(len(plot_saved.get("Spoilage", []))))))
+            spoil_agent_daily = res.get("log_apodrecimento_agente", plot_saved.get("Spoilage", []))
+            spoil_mm_daily = res.get("log_apodrecimento_minmax", plot_saved.get("MinMax Spoilage", []))
             
-        # Comparações diretas
+            cum_spoil_agent = np.cumsum(spoil_agent_daily) if len(spoil_agent_daily) > 0 else []
+            cum_spoil_mm = np.cumsum(spoil_mm_daily) if len(spoil_mm_daily) > 0 else []
+            
+            fig_spoil_cum = go.Figure()
+            if len(dias_series) > 0 and len(cum_spoil_mm) == len(dias_series):
+                # Min-Max curve
+                fig_spoil_cum.add_trace(go.Scatter(
+                    x=dias_series,
+                    y=cum_spoil_mm,
+                    mode='lines',
+                    name=f'Min-Max ({spoilage_mm:,.0f} un)',
+                    line=dict(color='#ef4444', width=2, dash='dot')
+                ))
+                # RL Agent PPO curve
+                fig_spoil_cum.add_trace(go.Scatter(
+                    x=dias_series,
+                    y=cum_spoil_agent,
+                    mode='lines',
+                    name=f'RL Agent PPO ({spoilage_ppo:,.0f} un)',
+                    line=dict(color='#10b981', width=3),
+                    fill='tonexty',
+                    fillcolor='rgba(16, 185, 129, 0.12)'
+                ))
+            
+            fig_spoil_cum.update_layout(
+                title=T("Evolução do Apodrecimento Acumulado (Área = Desperdício Evitado)", "Cumulative Spoilage Evolution (Area = Prevented Waste)"),
+                xaxis_title=T("Dias de Teste", "Test Days"),
+                yaxis_title=T("Unidades Apodrecidas Acumuladas", "Cumulative Spoiled Units"),
+                paper_bgcolor="#ffffff",
+                plot_bgcolor="#ffffff",
+                font=dict(color="#1e293b"),
+                legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center"),
+                margin=dict(t=50, b=40, l=40, r=40)
+            )
+            st.plotly_chart(fig_spoil_cum, use_container_width=True)
+
+        # Gráfico 2: Comparação de Taxas e Volumes de Spoilage
+        with col_sp_chart2:
+            categories = [T("RL Agent (PPO)", "RL Agent (PPO)"), T("Min-Max Baseline", "Min-Max Baseline")]
+            rates = [pct_spoilage_ppo, pct_spoilage_mm]
+            units = [spoilage_ppo, spoilage_mm]
+            colors = ['#10b981', '#ef4444']
+            
+            fig_spoil_bar = go.Figure()
+            fig_spoil_bar.add_trace(go.Bar(
+                x=categories,
+                y=rates,
+                name=T("Taxa de Spoilage (%)", "Spoilage Rate (%)"),
+                marker_color=colors,
+                text=[f"{r:.2f}%<br>({u:,.0f} un)" for r, u in zip(rates, units)],
+                textposition='auto',
+                width=0.45
+            ))
+            
+            fig_spoil_bar.update_layout(
+                title=T("Taxa de Spoilage Comparativa (%)", "Comparative Spoilage Rate (%)"),
+                yaxis_title=T("Taxa de Apodrecimento (%)", "Spoilage Rate (%)"),
+                paper_bgcolor="#ffffff",
+                plot_bgcolor="#ffffff",
+                font=dict(color="#1e293b"),
+                margin=dict(t=50, b=40, l=40, r=40),
+                showlegend=False
+            )
+            st.plotly_chart(fig_spoil_bar, use_container_width=True)
+
+        # Comparações diretas de lucro
         profit_diff = res["cum_profit_agent"] - res["cum_profit_minmax"]
         pct_improvement = (profit_diff / max(1.0, abs(res["cum_profit_minmax"]))) * 100.0
         
-        st.markdown(f"#### {T('Resumo Executivo', 'Executive Summary')}")
+        st.markdown(f"#### {T('Resumo Financeiro & Operacional', 'Financial & Operational Summary')}")
         if profit_diff > 0:
-            st.success(T(f"📈 O Agente PPO superou o baseline Min-Max tradicional em **{profit_diff:.2f}€** (+{pct_improvement:.2f}%).", f"📈 The PPO Agent outperformed the traditional Min-Max baseline by **{profit_diff:.2f}€** (+{pct_improvement:.2f}%)."))
+            st.success(T(f"📈 O Agente PPO superou o baseline Min-Max tradicional em **{profit_diff:.2f}€** (+{pct_improvement:.2f}% de lucro).", f"📈 The PPO Agent outperformed the traditional Min-Max baseline by **{profit_diff:.2f}€** (+{pct_improvement:.2f}% profit)."))
         else:
             st.warning(T(f"📉 O Agente PPO obteve um lucro inferior ao baseline Min-Max tradicional em **{abs(profit_diff):.2f}€** ({pct_improvement:.2f}%).", f"📉 The PPO Agent obtained a profit lower than the traditional Min-Max baseline by **{abs(profit_diff):.2f}€** ({pct_improvement:.2f}%)."))
             

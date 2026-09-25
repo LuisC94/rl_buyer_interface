@@ -796,9 +796,22 @@ def run_testing_simulation(excel_path, train_split, max_capacity, initial_model_
         "cum_profit_oracle": cum_profit_oracle,
         "stockout_days": sum(flag_stockout),
         "spoilage_total": sum(log_apodrecimento_agente),
+        "spoilage_minmax_total": sum(log_apodrecimento_minmax),
+        "spoilage_oracle_total": sum(log_apodrecimento_oracle),
         "lost_sales_total": sum(log_vendas_perdidas_agente),
+        "lost_sales_minmax_total": sum(log_vendas_perdidas_minmax),
         "overflow_waste_total": sum(log_excesso_agente),
+        "total_orders_agent": sum(log_acoes_agente),
+        "total_orders_minmax": sum(log_acoes_minmax),
+        "total_orders_oracle": sum(log_acoes_oracle),
+        "total_sales_agent": sum(log_vendas_agente),
+        "total_sales_minmax": sum(log_vendas_minmax),
+        "total_demand": sum(log_procura_real),
         "excel_report_path": excel_report_path,
         "final_model_path": final_model_path,
-        "update_days": update_days
+        "update_days": update_days,
+        "log_apodrecimento_agente": log_apodrecimento_agente,
+        "log_apodrecimento_minmax": log_apodrecimento_minmax,
+        "log_apodrecimento_oracle": log_apodrecimento_oracle,
+        "log_dias": log_dias
     }
